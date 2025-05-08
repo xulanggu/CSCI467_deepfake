@@ -94,7 +94,7 @@ for lr in learning_rates:
             val_result = trainer.predict(val_ds)
             val_preds = np.argmax(val_result.predictions, axis=1)
             f1 = f1_score(val_result.label_ids, val_preds, average='weighted')
-            print(f"🔍 Validation F1 = {f1:.4f}")
+            print(f"Validation F1 = {f1:.4f}")
 
             if f1 > best_f1:
                 best_f1 = f1
