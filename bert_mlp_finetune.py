@@ -67,8 +67,8 @@ for lr in learning_rates:
 
             args = TrainingArguments(
                 output_dir="./finetuned_bert_resume",
-                evaluation_strategy="epoch",     # ✅ 每个 epoch 评估
-                save_strategy="epoch",           # ✅ 每个 epoch 保存模型
+                evaluation_strategy="epoch",  
+                save_strategy="epoch",      
                 learning_rate=lr,
                 per_device_train_batch_size=bs,
                 per_device_eval_batch_size=bs,
@@ -76,7 +76,7 @@ for lr in learning_rates:
                 weight_decay=0.01,
                 logging_dir="./logs",
                 logging_steps=10,
-                load_best_model_at_end=True,     # ✅ 开启 best model 保存
+                load_best_model_at_end=True, 
                 metric_for_best_model="f1"
             )
 
@@ -102,7 +102,7 @@ for lr in learning_rates:
                 best_config = {"lr": lr, "batch_size": bs, "epochs": ep}
 
 # === Final Evaluation on Test Set ===
-print(f"\n✅ Best Config: {best_config} | Best Validation F1: {best_f1:.4f}")
+print(f"\nBest Config: {best_config} | Best Validation F1: {best_f1:.4f}")
 
 trainer = Trainer(
     model=best_model,
@@ -112,7 +112,7 @@ test_result = trainer.predict(test_ds)
 y_pred = np.argmax(test_result.predictions, axis=1)
 y_true = test_result.label_ids
 
-print("\n📋 Final Classification Report:")
+print("\nFinal Classification Report:")
 print(classification_report(y_true, y_pred, target_names=label_names))
 
 # === Confusion Matrix ===
