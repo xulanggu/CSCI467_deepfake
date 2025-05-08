@@ -33,8 +33,11 @@ def encode_texts(texts, batch_size=16, max_len=128):
         all_embs.append(cls_emb)
     return np.vstack(all_embs)
 
-batch_sizes_list = [8, 16, 32, 64]
-hidden_layer_sizes_list = [(50,), (100,), (100, 50), (100, 100)]
+# batch_sizes_list = [8, 16, 32, 64]
+# hidden_layer_sizes_list = [(50,), (100,), (100, 50), (100, 100)]
+
+batch_sizes_list = [64]
+hidden_layer_sizes_list = [(100,)]
 max_perf = 0
 best_bs = None
 best_hls = None
