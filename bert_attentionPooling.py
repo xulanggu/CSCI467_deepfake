@@ -1,4 +1,3 @@
-# === Imports ===
 import pandas as pd, numpy as np, torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, f1_score, confusion_matrix
@@ -11,7 +10,6 @@ from transformers import (
 )
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-# === Helper: Single‑head Attention Pool ===
 class AttnPool(torch.nn.Module):
     def __init__(self, d_model):
         super().__init__()
@@ -20,14 +18,14 @@ class AttnPool(torch.nn.Module):
         self.scale = d_model ** -0.5
 
     def forward(self, x, mask):             # x: (B,L,D)  mask: (B,L)
-        q = self.q(x[:, :1])                # (B,1,D) – use CLS as seed
+        q = self.q(x[:, :1])                # (B,1,D)
         k = self.k(x)                       # (B,L,D)
         scores = (q @ k.transpose(-2, -1)).squeeze(1) * self.scale  # (B,L)
         scores = scores.masked_fill(~mask.bool(), -1e4)
         attn = scores.softmax(-1).unsqueeze(-1)        # (B,L,1)
         return (attn * x).sum(1)                       # (B,D)
 
-# === Custom Model: Bert + Attn‑Pooling Head ===
+# Bert + Attn‑Pooling Head
 class BertAttnPoolingHead(BertPreTrainedModel):
     def __init__(self, config, p_drop=0.1):
         super().__init__(config)
@@ -36,7 +34,7 @@ class BertAttnPoolingHead(BertPreTrainedModel):
 
         self.pool = AttnPool(d)
         self.mlp = torch.nn.Sequential(
-            torch.nn.LayerNorm(d * 3),                 # attn ‖ mean ‖ max
+            torch.nn.LayerNorm(d * 3),     
             torch.nn.Linear(d * 3, d),
             torch.nn.GELU(),
             torch.nn.Dropout(p_drop),
@@ -64,7 +62,7 @@ class BertAttnPoolingHead(BertPreTrainedModel):
             attentions=out.attentions
         )
 
-# === Data Loading & Pre‑processing ===
+# Data Loading and Pre‑processing
 df = pd.read_csv(
     "/Users/huangzitong/.cache/kagglehub/datasets/snehaanbhawal/resume-dataset/versions/1/Resume/Resume.csv"
 )
@@ -91,7 +89,7 @@ def compute_metrics(eval_pred):
     preds = np.argmax(logits, axis=1)
     return {"f1": f1_score(labels, preds, average='weighted')}
 
-# === Hyper‑parameter Grid Search ===
+# Grid Search
 learning_rates = [2e-5]
 batch_sizes    = [16]
 epochs         = [5]
@@ -101,7 +99,7 @@ best_f1, best_model, best_cfg = 0, None, {}
 for lr in learning_rates:
     for bs in batch_sizes:
         for ep in epochs:
-            print(f"\n🚀  Config: lr={lr}, bs={bs}, epochs={ep}")
+            print(f"\n Config: lr={lr}, bs={bs}, epochs={ep}")
             model = BertAttnPoolingHead.from_pretrained(
                 "bert-base-uncased", num_labels=len(label_names)
             )
@@ -133,20 +131,20 @@ for lr in learning_rates:
             if f1 > best_f1:
                 best_f1, best_model, best_cfg = f1, model, {"lr": lr, "bs": bs, "epochs": ep}
 
-print(f"\n✅  Best Config: {best_cfg} | Val F1: {best_f1:.4f}")
+print(f"\n Best Config: {best_cfg} | Val F1: {best_f1:.4f}")
 
 # === Test‑set Evaluation ===
 trainer = Trainer(model=best_model, tokenizer=tokenizer)
 test_out = trainer.predict(test_ds)
 y_pred, y_true = np.argmax(test_out.predictions, 1), test_out.label_ids
 
-print("\nFinal Classification Report:")
+print("\n Final Classification Report:")
 print(classification_report(y_true, y_pred, target_names=label_names))
 
 cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(14, 12))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=label_names, yticklabels=label_names)
-plt.title("Confusion Matrix – Cocmbine Head")
+plt.title("Confusion Matrix")
 plt.xticks(rotation=45, ha="right"); plt.yticks(rotation=0)
 plt.tight_layout(); plt.savefig("combine.png", dpi=300); plt.show()

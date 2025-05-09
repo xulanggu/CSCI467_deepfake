@@ -1,4 +1,3 @@
-# === Imports ===
 import pandas as pd, numpy as np, torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, f1_score, confusion_matrix
@@ -15,7 +14,7 @@ import torch, torch.nn as nn
 from transformers import BertModel, BertPreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-# --- helper: single‑head attention pool ------------------------------
+# Single‑head attention pool
 class AttnPool(nn.Module):
     def __init__(self, d_model):
         super().__init__()
@@ -23,14 +22,14 @@ class AttnPool(nn.Module):
         self.k = nn.Linear(d_model, d_model)
         self.scale = d_model ** -0.5
     def forward(self, x, mask):
-        q = self.q(x[:, :1])                                 # (B,1,D)
-        k = self.k(x)                                        # (B,L,D)
+        q = self.q(x[:, :1])                       
+        k = self.k(x)                                 
         scores = (q @ k.transpose(-2, -1)).squeeze(1) * self.scale
         scores = scores.masked_fill(~mask.bool(), -1e4)
-        attn = scores.softmax(-1).unsqueeze(-1)              # (B,L,1)
-        return (attn * x).sum(1)                             # (B,D)
+        attn = scores.softmax(-1).unsqueeze(-1)           
+        return (attn * x).sum(1)                        
 
-# --- helper: one Residual SwiGLU block -------------------------------
+# One Residual SwiGLU block
 class ResSwiGLU(nn.Module):
     def __init__(self, d_in, expansion=4, p_drop=0.1):
         super().__init__()
@@ -46,10 +45,10 @@ class ResSwiGLU(nn.Module):
     def forward(self, x):                        # residual
         return x + self.ff(x)
 
-# --- combined model ---------------------------------------------------
+# Combine
 class BertAttnPoolSwiGLUHead(BertPreTrainedModel):
     def __init__(self, config,
-                 n_blocks: int = 2,   # number of SwiGLU layers
+                 n_blocks: int = 2,  
                  expansion: int = 4,
                  p_drop: float = 0.1):
         super().__init__(config)
@@ -58,7 +57,6 @@ class BertAttnPoolSwiGLUHead(BertPreTrainedModel):
 
         self.pool = AttnPool(d)
 
-        # (attn ‖ mean ‖ max)  → 3 × D
         self.in_ln = nn.LayerNorm(d * 3)
 
         self.swiglu_stack = nn.Sequential(
@@ -91,7 +89,7 @@ class BertAttnPoolSwiGLUHead(BertPreTrainedModel):
             hidden_states=out.hidden_states, attentions=out.attentions
         )
 
-# === Data Loading & Pre‑processing ===
+
 df = pd.read_csv(
     "/Users/xuwei/Desktop/spring2025/467_final/CSCI467_deepfake/data/1/Resume/Resume.csv"
 )
@@ -113,11 +111,11 @@ def tokenize(batch):
                      truncation=True,
                      max_length=128)
 
-train_ds = train_ds.map(tokenize, batched=True)   #  ← no inplace
+train_ds = train_ds.map(tokenize, batched=True) 
 val_ds   = val_ds.map(tokenize,   batched=True)
 test_ds  = test_ds.map(tokenize,  batched=True)
 
-# keep the format settings exactly as before
+
 for ds in (train_ds, val_ds, test_ds):
     ds.set_format(type="torch",
                   columns=["input_ids", "attention_mask", "label"])
@@ -127,7 +125,7 @@ def compute_metrics(eval_pred):
     preds = np.argmax(logits, axis=1)
     return {"f1": f1_score(labels, preds, average='weighted')}
 
-# === Hyper‑parameter Grid Search ===
+# Grid Search
 learning_rates = [2e-5]
 batch_sizes    = [16]
 epochs         = [5]
@@ -137,7 +135,7 @@ best_f1, best_model, best_cfg = 0, None, {}
 for lr in learning_rates:
     for bs in batch_sizes:
         for ep in epochs:
-            print(f"\n🚀  Config: lr={lr}, bs={bs}, epochs={ep}")
+            print(f"\n  Config: lr={lr}, bs={bs}, epochs={ep}")
             model = BertAttnPoolSwiGLUHead.from_pretrained(
                 "bert-base-uncased", num_labels=len(label_names)
             )
@@ -169,20 +167,20 @@ for lr in learning_rates:
             if f1 > best_f1:
                 best_f1, best_model, best_cfg = f1, model, {"lr": lr, "bs": bs, "epochs": ep}
 
-print(f"\n DUANG Best Config: {best_cfg} | Val F1: {best_f1:.4f}")
+print(f"\n DUANG Best Config: {best_cfg} | Val_F1: {best_f1:.4f}")
 
 # === Test‑set Evaluation ===
 trainer = Trainer(model=best_model, tokenizer=tokenizer)
 test_out = trainer.predict(test_ds)
 y_pred, y_true = np.argmax(test_out.predictions, 1), test_out.label_ids
 
-print("\nFinal Classification Report:")
+print("\n Final Classification Report:")
 print(classification_report(y_true, y_pred, target_names=label_names))
 
 cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(14, 12))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=label_names, yticklabels=label_names)
-plt.title("Confusion Matrix – Residual SwiGLU Combine with Attention Pooling")
+plt.title("Confusion Matrix  Residual SwiGLU Combine with Attention Pooling")
 plt.xticks(rotation=45, ha="right"); plt.yticks(rotation=0)
 plt.tight_layout(); plt.savefig("cm_combine.png", dpi=300); plt.show()

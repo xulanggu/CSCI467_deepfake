@@ -67,7 +67,6 @@ print("\n Best Configuration:")
 print(best_config)
 print(f" Best Weighted F1 Score: {best_f1:.4f}")
 
-# Final report
 xE_best = best_vectorizer.transform(xte)
 y_pred_best = best_model.predict(xE_best)
 print("\n Final Classification Report:")
@@ -80,7 +79,6 @@ print(classification_report(yte, y_pred_best))
 original_categories = resumeData["Category"].astype("category")
 category_names = original_categories.cat.categories.tolist()
 
-# Confusion Matrix
 cm = confusion_matrix(yte, y_pred_best)
 
 plt.figure(figsize=(14, 12))

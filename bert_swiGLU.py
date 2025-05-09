@@ -1,4 +1,3 @@
-# === Imports ===
 import pandas as pd, numpy as np, torch
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, f1_score, confusion_matrix
@@ -11,20 +10,20 @@ from transformers import (
 )
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-# === Custom Model: Bert + Residual SwiGLU Head ===
+# Bert + Residual SwiGLU Head
 class BertResSwiGLUHead(BertPreTrainedModel):
     def __init__(self, config, expansion=4, p_drop=0.1):
         super().__init__(config)
         self.bert = BertModel(config, add_pooling_layer=False)
 
-        d_in = config.hidden_size            # 768 for BERT‑base
+        d_in = config.hidden_size     
         d_hidden = d_in * expansion
 
         self.ff = torch.nn.Sequential(
             torch.nn.LayerNorm(d_in),
-            torch.nn.Linear(d_in, d_hidden * 2),  # [x ‖ gate]
+            torch.nn.Linear(d_in, d_hidden * 2), 
             torch.nn.SiLU(),
-            torch.nn.GLU(dim=-1),                 # x * σ(gate)
+            torch.nn.GLU(dim=-1),          
             torch.nn.Dropout(p_drop),
             torch.nn.Linear(d_hidden, d_in)
         )
@@ -50,7 +49,7 @@ class BertResSwiGLUHead(BertPreTrainedModel):
             attentions=bert_out.attentions
         )
 
-# === Data Loading & Pre‑processing ===
+
 df = pd.read_csv(
     "/Users/xuwei/Desktop/spring2025/467_final/CSCI467_deepfake/data/1/Resume/Resume.csv"
 )
@@ -72,11 +71,11 @@ def tokenize(batch):
                      truncation=True,
                      max_length=128)
 
-train_ds = train_ds.map(tokenize, batched=True)   #  ← no inplace
+train_ds = train_ds.map(tokenize, batched=True) 
 val_ds   = val_ds.map(tokenize,   batched=True)
 test_ds  = test_ds.map(tokenize,  batched=True)
 
-# keep the format settings exactly as before
+
 for ds in (train_ds, val_ds, test_ds):
     ds.set_format(type="torch",
                   columns=["input_ids", "attention_mask", "label"])
@@ -86,7 +85,7 @@ def compute_metrics(eval_pred):
     preds = np.argmax(logits, axis=1)
     return {"f1": f1_score(labels, preds, average='weighted')}
 
-# === Hyper‑parameter Grid Search ===
+# Grid Search
 learning_rates = [2e-3, 2e-5]
 batch_sizes    = [16, 32]
 epochs         = [3, 5]
@@ -96,7 +95,7 @@ best_f1, best_model, best_cfg = 0, None, {}
 for lr in learning_rates:
     for bs in batch_sizes:
         for ep in epochs:
-            print(f"\n🚀  Config: lr={lr}, bs={bs}, epochs={ep}")
+            print(f"\n  Config: lr={lr}, bs={bs}, epochs={ep}")
             model = BertResSwiGLUHead.from_pretrained(
                 "bert-base-uncased", num_labels=len(label_names)
             )
@@ -128,9 +127,9 @@ for lr in learning_rates:
             if f1 > best_f1:
                 best_f1, best_model, best_cfg = f1, model, {"lr": lr, "bs": bs, "epochs": ep}
 
-print(f"\n DUANG Best Config: {best_cfg} | Val F1: {best_f1:.4f}")
+print(f"\n DUANG Best Config: {best_cfg} | Val_F1: {best_f1:.4f}")
 
-# === Test‑set Evaluation ===
+# Test‑set Evaluation
 trainer = Trainer(model=best_model, tokenizer=tokenizer)
 test_out = trainer.predict(test_ds)
 y_pred, y_true = np.argmax(test_out.predictions, 1), test_out.label_ids
@@ -142,6 +141,6 @@ cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(14, 12))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=label_names, yticklabels=label_names)
-plt.title("Confusion Matrix – Residual SwiGLU Head")
+plt.title("Confusion Matrix of Residual with SwiGLU Head")
 plt.xticks(rotation=45, ha="right"); plt.yticks(rotation=0)
 plt.tight_layout(); plt.savefig("cm_res_swiglu.png", dpi=300); plt.show()
