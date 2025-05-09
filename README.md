@@ -5,7 +5,7 @@ This repository contains our final project for CSCI467, which focuses on resume 
 ## Project Structure
 
 - `TD-IFD+LR.py`: TF-IDF + Logistic Regression (baseline)
-- `bert_model.py`: BERT + XGBoost classifier (baseline)
+- `bert_xgboost.py`: BERT + XGBoost classifier (baseline)
 - `bert_mlp.py`: Original BERT + MLP head (not fine-tuned, baseline)
 - `bert_mlp_finetune.py`: Fine-tuned BERT + MLP (baseline)
 - `bert_swiGLU.py`: BERT + Residual SwiGLU block
