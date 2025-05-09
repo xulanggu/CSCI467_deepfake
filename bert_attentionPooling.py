@@ -92,9 +92,9 @@ def compute_metrics(eval_pred):
     return {"f1": f1_score(labels, preds, average='weighted')}
 
 # === Hyper‑parameter Grid Search ===
-learning_rates = [2e-3, 2e-5]
-batch_sizes    = [16, 32]
-epochs         = [3, 5]
+learning_rates = [2e-5]
+batch_sizes    = [16]
+epochs         = [5]
 
 best_f1, best_model, best_cfg = 0, None, {}
 
@@ -147,6 +147,6 @@ cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(14, 12))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=label_names, yticklabels=label_names)
-plt.title("Confusion Matrix – Attention Pooling Head")
+plt.title("Confusion Matrix – Cocmbine Head")
 plt.xticks(rotation=45, ha="right"); plt.yticks(rotation=0)
-plt.tight_layout(); plt.savefig("cm_attn_pooling.png", dpi=300); plt.show()
+plt.tight_layout(); plt.savefig("combine.png", dpi=300); plt.show()

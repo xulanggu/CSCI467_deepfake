@@ -11,43 +11,84 @@ from transformers import (
 )
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-# === Custom Model: Bert + Residual SwiGLU Head ===
-class BertResSwiGLUHead(BertPreTrainedModel):
-    def __init__(self, config, expansion=4, p_drop=0.1):
+import torch, torch.nn as nn
+from transformers import BertModel, BertPreTrainedModel
+from transformers.modeling_outputs import SequenceClassifierOutput
+
+# --- helper: single‑head attention pool ------------------------------
+class AttnPool(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+        self.q = nn.Linear(d_model, d_model)
+        self.k = nn.Linear(d_model, d_model)
+        self.scale = d_model ** -0.5
+    def forward(self, x, mask):
+        q = self.q(x[:, :1])                                 # (B,1,D)
+        k = self.k(x)                                        # (B,L,D)
+        scores = (q @ k.transpose(-2, -1)).squeeze(1) * self.scale
+        scores = scores.masked_fill(~mask.bool(), -1e4)
+        attn = scores.softmax(-1).unsqueeze(-1)              # (B,L,1)
+        return (attn * x).sum(1)                             # (B,D)
+
+# --- helper: one Residual SwiGLU block -------------------------------
+class ResSwiGLU(nn.Module):
+    def __init__(self, d_in, expansion=4, p_drop=0.1):
+        super().__init__()
+        d_hid = d_in * expansion
+        self.ff = nn.Sequential(
+            nn.LayerNorm(d_in),
+            nn.Linear(d_in, d_hid * 2),  # [x ‖ gate]
+            nn.SiLU(),
+            nn.GLU(dim=-1),
+            nn.Dropout(p_drop),
+            nn.Linear(d_hid, d_in)
+        )
+    def forward(self, x):                        # residual
+        return x + self.ff(x)
+
+# --- combined model ---------------------------------------------------
+class BertAttnPoolSwiGLUHead(BertPreTrainedModel):
+    def __init__(self, config,
+                 n_blocks: int = 2,   # number of SwiGLU layers
+                 expansion: int = 4,
+                 p_drop: float = 0.1):
         super().__init__(config)
         self.bert = BertModel(config, add_pooling_layer=False)
+        d = config.hidden_size
 
-        d_in = config.hidden_size            # 768 for BERT‑base
-        d_hidden = d_in * expansion
+        self.pool = AttnPool(d)
 
-        self.ff = torch.nn.Sequential(
-            torch.nn.LayerNorm(d_in),
-            torch.nn.Linear(d_in, d_hidden * 2),  # [x ‖ gate]
-            torch.nn.SiLU(),
-            torch.nn.GLU(dim=-1),                 # x * σ(gate)
-            torch.nn.Dropout(p_drop),
-            torch.nn.Linear(d_hidden, d_in)
+        # (attn ‖ mean ‖ max)  → 3 × D
+        self.in_ln = nn.LayerNorm(d * 3)
+
+        self.swiglu_stack = nn.Sequential(
+            *[ResSwiGLU(d * 3, expansion, p_drop) for _ in range(n_blocks)]
         )
-        self.dropout = torch.nn.Dropout(p_drop)
-        self.out_proj = torch.nn.Linear(d_in, config.num_labels)
+
+        self.dropout = nn.Dropout(p_drop)
+        self.out_proj = nn.Linear(d * 3, config.num_labels)
 
         self.post_init()
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, **kwargs):
-        bert_out = self.bert(input_ids, attention_mask=attention_mask, **kwargs)
-        pooled = bert_out.last_hidden_state[:, 0]          # [CLS]
-        x = pooled + self.ff(pooled)                       # residual
-        x = self.dropout(x)
-        logits = self.out_proj(x)
+        out = self.bert(input_ids, attention_mask=attention_mask, **kwargs)
+        x = out.last_hidden_state                                 # (B,L,D)
+
+        attn_vec = self.pool(x, attention_mask)                   # (B,D)
+        pooled   = torch.cat([attn_vec, x.mean(1), x.max(1).values], dim=-1)
+
+        y = self.in_ln(pooled)
+        y = self.swiglu_stack(y)
+        y = self.dropout(y)
+        logits = self.out_proj(y)
 
         loss = None
         if labels is not None:
-            loss = torch.nn.functional.cross_entropy(logits, labels)
+            loss = nn.functional.cross_entropy(logits, labels)
 
         return SequenceClassifierOutput(
             loss=loss, logits=logits,
-            hidden_states=bert_out.hidden_states,
-            attentions=bert_out.attentions
+            hidden_states=out.hidden_states, attentions=out.attentions
         )
 
 # === Data Loading & Pre‑processing ===
@@ -87,9 +128,9 @@ def compute_metrics(eval_pred):
     return {"f1": f1_score(labels, preds, average='weighted')}
 
 # === Hyper‑parameter Grid Search ===
-learning_rates = [2e-3, 2e-5]
-batch_sizes    = [16, 32]
-epochs         = [3, 5]
+learning_rates = [2e-5]
+batch_sizes    = [16]
+epochs         = [5]
 
 best_f1, best_model, best_cfg = 0, None, {}
 
@@ -97,7 +138,7 @@ for lr in learning_rates:
     for bs in batch_sizes:
         for ep in epochs:
             print(f"\n🚀  Config: lr={lr}, bs={bs}, epochs={ep}")
-            model = BertResSwiGLUHead.from_pretrained(
+            model = BertAttnPoolSwiGLUHead.from_pretrained(
                 "bert-base-uncased", num_labels=len(label_names)
             )
 
@@ -142,6 +183,6 @@ cm = confusion_matrix(y_true, y_pred)
 plt.figure(figsize=(14, 12))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=label_names, yticklabels=label_names)
-plt.title("Confusion Matrix – Residual SwiGLU Head")
+plt.title("Confusion Matrix – Residual SwiGLU Combine with Attention Pooling")
 plt.xticks(rotation=45, ha="right"); plt.yticks(rotation=0)
-plt.tight_layout(); plt.savefig("cm_res_swiglu.png", dpi=300); plt.show()
+plt.tight_layout(); plt.savefig("cm_combine.png", dpi=300); plt.show()
